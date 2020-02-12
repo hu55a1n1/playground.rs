@@ -1,4 +1,4 @@
-use std::fmt::Error;
+use std::fmt::{Debug, Error, Formatter};
 
 trait TxOp {
     type TxState;
@@ -51,8 +51,15 @@ struct Tx {
 }
 
 impl Tx {
-    pub fn new(ops: Vec<Box<dyn TxOp<TxState=TxData>>>, data: TxData) -> Self {
-        Tx { ops, data }
+    pub fn run(ops: Vec<Box<dyn TxOp<TxState=TxData>>>, data: TxData) -> Result<Tx, Error> {
+        let mut tx = Tx::new(ops, data);
+        let res = tx.execute();
+        if res.is_err() { return Err(res.err().unwrap()); }
+        return Ok(tx);
+    }
+
+    fn new(ops: Vec<Box<dyn TxOp<TxState=TxData>>>, data: TxData) -> Self {
+        Tx { ops, data, completed: 0 }
     }
 
     fn execute(&mut self) -> Result<(), Error> {
@@ -80,10 +87,8 @@ impl Drop for Tx {
     }
 }
 
-fn main() -> Result<(), Error> {
+fn main() {
     let data = TxData { sender: 10, receiver: 20 };
-    let mut tx = Tx::new(vec![Box::new(Op1::new())], data);
-    tx.execute()?;
-    println!("{:?}", tx.data);
-    Ok(())
+    let res = Tx::run(vec![Box::new(Op1::new())], data);
+    println!("{:?}", res.ok());
 }
