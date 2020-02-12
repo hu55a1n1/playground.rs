@@ -62,6 +62,12 @@ impl Tx {
     }
 }
 
+impl Debug for Tx {
+    fn fmt(&self, f: &mut Formatter) -> Result<(), Error> {
+        write!(f, "Tx {{ completed: {}, data: {:?} }}", self.completed, self.data)
+    }
+}
+
 impl Drop for Tx {
     fn drop(&mut self) {
         for op in &mut self.ops.iter().rev() {
