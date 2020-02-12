@@ -1,3 +1,4 @@
+use std::borrow::BorrowMut;
 use std::fmt::{Debug, Error, Formatter};
 
 trait TxOp {
@@ -44,40 +45,42 @@ impl TxOp for Op1 {
     }
 }
 
-struct Tx {
+struct Tx<'a> {
     ops: Vec<Box<dyn TxOp<TxState=TxData>>>,
-    data: TxData,
+    data: &'a mut TxData,
     completed: u8,
 }
 
-impl Tx {
-    pub fn run(ops: Vec<Box<dyn TxOp<TxState=TxData>>>, data: TxData) -> Result<Tx, Error> {
-        let mut tx = Tx::new(ops, data);
-        let res = tx.execute();
-        if res.is_err() { return Err(res.err().unwrap()); }
-        return Ok(tx);
+impl<'a> Tx<'a> {
+    pub fn run(ops: Vec<Box<dyn TxOp<TxState=TxData>>>, data: &'a mut TxData) -> Result<&mut TxData, Error> {
+        {
+            let mut tx = Tx::new(ops, data);
+            let res = tx.execute();
+            if res.is_err() { return Err(res.err().unwrap()); }
+        }
+        return Ok(data);
     }
 
-    fn new(ops: Vec<Box<dyn TxOp<TxState=TxData>>>, data: TxData) -> Self {
-        Tx { ops, data, completed: 0 }
+    fn new(ops: Vec<Box<dyn TxOp<TxState=TxData>>>, data: &'a mut TxData) -> Self {
+        Tx { ops, completed: 0, data }
     }
 
     fn execute(&mut self) -> Result<(), Error> {
         for op in &mut self.ops {
-            op.execute(&mut self.data)?;
+            op.execute(self.data)?;
             self.completed += 1;
         }
         return Ok(());
     }
 }
 
-impl Debug for Tx {
+impl<'a> Debug for Tx<'a> {
     fn fmt(&self, f: &mut Formatter) -> Result<(), Error> {
-        write!(f, "Tx {{ completed: {}, data: {:?} }}", self.completed, self.data)
+        write!(f, "Tx {{ completed: {} }}", self.completed)
     }
 }
 
-impl Drop for Tx {
+impl<'a> Drop for Tx<'a> {
     fn drop(&mut self) {
         for op in &mut self.ops.iter().rev() {
             if op.failed() {
@@ -88,7 +91,7 @@ impl Drop for Tx {
 }
 
 fn main() {
-    let data = TxData { sender: 10, receiver: 20 };
-    let res = Tx::run(vec![Box::new(Op1::new())], data);
+    let mut data = TxData { sender: 10, receiver: 20 };
+    let res = Tx::run(vec![Box::new(Op1::new())], data.borrow_mut());
     println!("{:?}", res.ok());
 }
