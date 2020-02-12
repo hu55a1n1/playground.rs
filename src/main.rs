@@ -47,6 +47,7 @@ impl TxOp for Op1 {
 struct Tx {
     ops: Vec<Box<dyn TxOp<TxState=TxData>>>,
     data: TxData,
+    completed: u8,
 }
 
 impl Tx {
@@ -57,6 +58,7 @@ impl Tx {
     fn execute(&mut self) -> Result<(), Error> {
         for op in &mut self.ops {
             op.execute(&mut self.data)?;
+            self.completed += 1;
         }
         return Ok(());
     }
