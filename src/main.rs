@@ -82,7 +82,7 @@ impl<'a> Debug for Tx<'a> {
 
 impl<'a> Drop for Tx<'a> {
     fn drop(&mut self) {
-        for op in &mut self.ops.iter().rev() {
+        for op in &mut self.ops[self.completed..].iter().rev() {
             if op.failed() {
                 op.revert(&mut self.data);
             }
