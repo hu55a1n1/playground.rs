@@ -4,7 +4,6 @@ use std::fmt::{Debug, Error, Formatter};
 trait TxOp {
     type TxState;
     fn execute(&mut self, state: &mut Self::TxState) -> Result<(), Error>;
-    fn failed(&self) -> bool;
     fn revert(&self, state: &mut Self::TxState);
 }
 
@@ -14,13 +13,11 @@ struct TxData {
     receiver: u32,
 }
 
-struct Op1 {
-    failed: bool
-}
+struct Op1;
 
 impl Op1 {
     pub fn new() -> Self {
-        Op1 { failed: false }
+        Op1 {}
     }
 }
 
@@ -29,26 +26,19 @@ impl TxOp for Op1 {
 
     fn execute(&mut self, state: &mut Self::TxState) -> Result<(), Error> {
         state.sender = state.sender - 10;
-        self.failed = true;
         Ok(())
     }
 
-    fn failed(&self) -> bool {
-        return self.failed;
-    }
-
     fn revert(&self, state: &mut Self::TxState) {
-        if self.failed {
-            println!("op1-rev");
-            state.sender = state.sender + 10;
-        }
+        println!("op1-rev");
+        state.sender = state.sender + 10;
     }
 }
 
 struct Tx<'a> {
     ops: Vec<Box<dyn TxOp<TxState=TxData>>>,
     data: &'a mut TxData,
-    completed: u8,
+    completed: usize,
 }
 
 impl<'a> Tx<'a> {
@@ -83,9 +73,7 @@ impl<'a> Debug for Tx<'a> {
 impl<'a> Drop for Tx<'a> {
     fn drop(&mut self) {
         for op in &mut self.ops[self.completed..].iter().rev() {
-            if op.failed() {
-                op.revert(&mut self.data);
-            }
+            op.revert(&mut self.data);
         }
     }
 }
