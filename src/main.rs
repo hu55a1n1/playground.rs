@@ -121,8 +121,10 @@ impl<'a> Debug for Tx<'a> {
 
 impl<'a> Drop for Tx<'a> {
     fn drop(&mut self) {
-        for op in &mut self.ops[self.completed..].iter().rev() {
-            op.revert(&mut self.data);
+        if self.completed != self.ops.len() {
+            for op in &mut self.ops[..self.completed].iter().rev() {
+                op.revert(&mut self.data);
+            }
         }
     }
 }
