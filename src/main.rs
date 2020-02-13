@@ -2,6 +2,8 @@ use std::borrow::BorrowMut;
 use std::error::Error;
 use std::fmt::{Debug, Display, Formatter};
 
+type TxResult = Result<(), TxError>;
+
 #[derive(Debug)]
 struct TxError {
     description: &'static str
@@ -27,7 +29,7 @@ impl Display for TxError {
 
 trait TxOp {
     type TxState;
-    fn execute(&mut self, state: &mut Self::TxState) -> Result<(), TxError>;
+    fn execute(&mut self, state: &mut Self::TxState) -> TxResult;
     fn revert(&self, state: &mut Self::TxState);
 }
 
@@ -50,7 +52,7 @@ impl OpDebitSender {
 impl TxOp for OpDebitSender {
     type TxState = TxData;
 
-    fn execute(&mut self, state: &mut Self::TxState) -> Result<(), TxError> {
+    fn execute(&mut self, state: &mut Self::TxState) -> TxResult {
         if state.sender < self.amount { return Err(TxError::new("Insufficient funds")); }
         state.sender = state.sender - self.amount;
         Ok(())
@@ -74,7 +76,7 @@ impl OpCreditReceiver {
 impl TxOp for OpCreditReceiver {
     type TxState = TxData;
 
-    fn execute(&mut self, state: &mut Self::TxState) -> Result<(), TxError> {
+    fn execute(&mut self, state: &mut Self::TxState) -> TxResult {
         state.receiver = state.receiver + self.amount;
         Ok(())
     }
@@ -91,7 +93,8 @@ struct Tx<'a> {
 }
 
 impl<'a> Tx<'a> {
-    pub fn run(ops: Vec<Box<dyn TxOp<TxState=TxData>>>, data: &'a mut TxData) -> Result<&mut TxData, TxError> {
+    pub fn run(ops: Vec<Box<dyn TxOp<TxState=TxData>>>, data: &'a mut TxData)
+               -> Result<&mut TxData, TxError> {
         {
             let mut tx = Tx::new(ops, data);
             let res = tx.execute();
@@ -104,7 +107,7 @@ impl<'a> Tx<'a> {
         Tx { ops, completed: 0, data }
     }
 
-    fn execute(&mut self) -> Result<(), TxError> {
+    fn execute(&mut self) -> TxResult {
         for op in &mut self.ops {
             op.execute(self.data)?;
             self.completed += 1;
