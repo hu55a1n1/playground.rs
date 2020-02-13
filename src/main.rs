@@ -37,25 +37,50 @@ struct TxData {
     receiver: u32,
 }
 
-struct Op1;
+struct OpDebitSender {
+    amount: u32
+}
 
-impl Op1 {
-    pub fn new() -> Self {
-        Op1 {}
+impl OpDebitSender {
+    pub fn new(amount: u32) -> Self {
+        OpDebitSender { amount }
     }
 }
 
-impl TxOp for Op1 {
+impl TxOp for OpDebitSender {
     type TxState = TxData;
 
-    fn execute(&mut self, state: &mut Self::TxState) -> Result<(), Error> {
-        state.sender = state.sender - 10;
+    fn execute(&mut self, state: &mut Self::TxState) -> Result<(), TxError> {
+        if state.sender < self.amount { return Err(TxError::new("Insufficient funds")); }
+        state.sender = state.sender - self.amount;
         Ok(())
     }
 
     fn revert(&self, state: &mut Self::TxState) {
-        println!("op1-rev");
-        state.sender = state.sender + 10;
+        state.sender = state.sender + self.amount;
+    }
+}
+
+struct OpCreditReceiver {
+    amount: u32
+}
+
+impl OpCreditReceiver {
+    pub fn new(amount: u32) -> Self {
+        OpCreditReceiver { amount }
+    }
+}
+
+impl TxOp for OpCreditReceiver {
+    type TxState = TxData;
+
+    fn execute(&mut self, state: &mut Self::TxState) -> Result<(), TxError> {
+        state.receiver = state.receiver + self.amount;
+        Ok(())
+    }
+
+    fn revert(&self, state: &mut Self::TxState) {
+        state.receiver = state.receiver - self.amount;
     }
 }
 
@@ -66,7 +91,7 @@ struct Tx<'a> {
 }
 
 impl<'a> Tx<'a> {
-    pub fn run(ops: Vec<Box<dyn TxOp<TxState=TxData>>>, data: &'a mut TxData) -> Result<&mut TxData, Error> {
+    pub fn run(ops: Vec<Box<dyn TxOp<TxState=TxData>>>, data: &'a mut TxData) -> Result<&mut TxData, TxError> {
         {
             let mut tx = Tx::new(ops, data);
             let res = tx.execute();
@@ -79,7 +104,7 @@ impl<'a> Tx<'a> {
         Tx { ops, completed: 0, data }
     }
 
-    fn execute(&mut self) -> Result<(), Error> {
+    fn execute(&mut self) -> Result<(), TxError> {
         for op in &mut self.ops {
             op.execute(self.data)?;
             self.completed += 1;
@@ -89,7 +114,7 @@ impl<'a> Tx<'a> {
 }
 
 impl<'a> Debug for Tx<'a> {
-    fn fmt(&self, f: &mut Formatter) -> Result<(), Error> {
+    fn fmt(&self, f: &mut Formatter) -> Result<(), std::fmt::Error> {
         write!(f, "Tx {{ completed: {} }}", self.completed)
     }
 }
