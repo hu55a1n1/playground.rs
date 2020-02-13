@@ -129,8 +129,21 @@ impl<'a> Drop for Tx<'a> {
     }
 }
 
+fn tx_fees(val: u32) -> u32 {
+    match val {
+        0...10 => 2,
+        11...100 => 5,
+        100...500 => 10,
+        _ => val / 50
+    }
+}
+
 fn main() {
     let mut data = TxData { sender: 10, receiver: 20 };
-    let res = Tx::run(vec![Box::new(Op1::new())], data.borrow_mut());
-    println!("{:?}", res.ok());
+    let _res = Tx::run(vec![
+        Box::new(OpDebitSender::new(tx_fees(8))),
+        Box::new(OpDebitSender::new(8)),
+        Box::new(OpCreditReceiver::new(8)),
+    ], data.borrow_mut());
+    println!("{:?}", data);
 }
