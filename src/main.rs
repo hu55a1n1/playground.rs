@@ -1,9 +1,33 @@
 use std::borrow::BorrowMut;
-use std::fmt::{Debug, Error, Formatter};
+use std::error::Error;
+use std::fmt::{Debug, Display, Formatter};
+
+#[derive(Debug)]
+struct TxError {
+    description: &'static str
+}
+
+impl TxError {
+    pub fn new(description: &'static str) -> Self {
+        TxError { description }
+    }
+}
+
+impl Error for TxError {
+    fn description(&self) -> &str {
+        self.description
+    }
+}
+
+impl Display for TxError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
+        write!(f, "{:?}", self.description)
+    }
+}
 
 trait TxOp {
     type TxState;
-    fn execute(&mut self, state: &mut Self::TxState) -> Result<(), Error>;
+    fn execute(&mut self, state: &mut Self::TxState) -> Result<(), TxError>;
     fn revert(&self, state: &mut Self::TxState);
 }
 
