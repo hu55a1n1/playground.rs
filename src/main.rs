@@ -138,12 +138,57 @@ fn tx_fees(val: u32) -> u32 {
     }
 }
 
-fn main() {
-    let mut data = TxData { sender: 10, receiver: 20 };
+fn tx_transfer(sender: u32, receiver: u32, transfer: u32) -> TxData {
+    let mut data = TxData { sender, receiver };
     let _res = Tx::run(vec![
-        Box::new(OpDebitSender::new(tx_fees(8))),
-        Box::new(OpDebitSender::new(8)),
-        Box::new(OpCreditReceiver::new(8)),
+        Box::new(OpDebitSender::new(tx_fees(transfer))),
+        Box::new(OpDebitSender::new(transfer)),
+        Box::new(OpCreditReceiver::new(transfer)),
     ], data.borrow_mut());
+    data
+}
+
+fn main() {
+    let data = tx_transfer(10, 20, 8);
     println!("{:?}", data);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tx_transfer_1() {
+        let data = tx_transfer(10, 20, 8);
+        assert_eq!(data.sender, 0);
+        assert_eq!(data.receiver, 28);
+    }
+
+    #[test]
+    fn tx_transfer_2() {
+        let data = tx_transfer(120, 0, 35);
+        assert_eq!(data.sender, 80);
+        assert_eq!(data.receiver, 35);
+    }
+
+    #[test]
+    fn tx_transfer_3() {
+        let data = tx_transfer(912387, 31, 29387);
+        assert_eq!(data.sender, 882413);
+        assert_eq!(data.receiver, 29418);
+    }
+
+    #[test]
+    fn tx_transfer_4() {
+        let data = tx_transfer(0, 100, 0);
+        assert_eq!(data.sender, 0);
+        assert_eq!(data.receiver, 100);
+    }
+
+    #[test]
+    fn tx_transfer_5() {
+        let data = tx_transfer(80, 100, 80);
+        assert_eq!(data.sender, 80);
+        assert_eq!(data.receiver, 100);
+    }
 }
