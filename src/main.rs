@@ -23,7 +23,7 @@ impl Error for TxError {
 
 impl Display for TxError {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
-        write!(f, "{:?}", self.description)
+        write!(f, "{}", self.description)
     }
 }
 
@@ -100,7 +100,7 @@ impl<'a> Tx<'a> {
             let res = tx.execute();
             if res.is_err() { return Err(res.err().unwrap()); }
         }
-        return Ok(data);
+        Ok(data)
     }
 
     fn new(ops: Vec<Box<dyn TxOp<TxState=TxData>>>, data: &'a mut TxData) -> Self {
@@ -112,7 +112,7 @@ impl<'a> Tx<'a> {
             op.execute(self.data)?;
             self.completed += 1;
         }
-        return Ok(());
+        Ok(())
     }
 }
 
