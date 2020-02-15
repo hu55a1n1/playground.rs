@@ -118,11 +118,12 @@ fn main() {
         let mut data = Arc::clone(&data);
         let _res = thread::spawn(move || {
             let transfer = 10 * i;
-            let _res = atomic_run(&vec![
+            let ops: Vec<Box<dyn TxOp<TxState=TxData>>> = vec![
                 Box::new(OpDebitSender::new(tx_fees(transfer))),
                 Box::new(OpDebitSender::new(transfer)),
                 Box::new(OpCreditReceiver::new(transfer)),
-            ], &mut data);
+            ];
+            let _res = atomic_run(&ops, &mut data);
             println!("{:?}", data);
         }).join();
     }
