@@ -33,8 +33,8 @@ mod atomic_tx {
 
     pub(crate) trait TxOp {
         type TxState;
-        fn execute(&self, state: &mut Self::TxState) -> TxResult;
-        fn revert(&self, state: &mut Self::TxState);
+        fn apply(&self, state: &mut Self::TxState) -> TxResult;
+        fn rollback(&self, state: &mut Self::TxState);
     }
 
     pub(crate) fn run<T>(ops: &[Box<dyn TxOp<TxState=T>>], data: &mut sync::Arc<sync::Mutex<T>>)
@@ -44,7 +44,7 @@ mod atomic_tx {
         let mut data = data.lock().unwrap();
 
         for op in ops {
-            match op.execute(&mut *data) {
+            match op.apply(&mut *data) {
                 Err(e) => {
                     err = Some(e);
                     break;
@@ -55,7 +55,7 @@ mod atomic_tx {
 
         if err.is_some() {
             for op in ops[..completed].iter().rev() {
-                op.revert(&mut data);
+                op.rollback(&mut data);
             }
             return Err((completed, err.unwrap()));
         }
@@ -82,13 +82,13 @@ impl OpDebitSender {
 impl atomic_tx::TxOp for OpDebitSender {
     type TxState = TxData;
 
-    fn execute(&self, state: &mut Self::TxState) -> atomic_tx::TxResult {
+    fn apply(&self, state: &mut Self::TxState) -> atomic_tx::TxResult {
         if state.sender < self.amount { return Err(atomic_tx::TxError::new("Insufficient funds")); }
         state.sender = state.sender - self.amount;
         Ok(())
     }
 
-    fn revert(&self, state: &mut Self::TxState) {
+    fn rollback(&self, state: &mut Self::TxState) {
         state.sender = state.sender + self.amount;
     }
 }
@@ -106,12 +106,12 @@ impl OpCreditReceiver {
 impl atomic_tx::TxOp for OpCreditReceiver {
     type TxState = TxData;
 
-    fn execute(&self, state: &mut Self::TxState) -> atomic_tx::TxResult {
+    fn apply(&self, state: &mut Self::TxState) -> atomic_tx::TxResult {
         state.receiver = state.receiver + self.amount;
         Ok(())
     }
 
-    fn revert(&self, state: &mut Self::TxState) {
+    fn rollback(&self, state: &mut Self::TxState) {
         state.receiver = state.receiver - self.amount;
     }
 }
