@@ -1,7 +1,7 @@
-use std::borrow::BorrowMut;
 use std::error::Error;
-use std::fmt::{Debug, Display, Formatter};
+use std::fmt::{Display, Formatter};
 use std::sync::{Arc, Mutex};
+use std::thread;
 
 type TxResult = Result<(), TxError>;
 
@@ -87,54 +87,6 @@ impl TxOp for OpCreditReceiver {
     }
 }
 
-struct Tx<'a> {
-    ops: Vec<Box<dyn TxOp<TxState=TxData>>>,
-    data: &'a mut TxData,
-    completed: usize,
-}
-
-impl<'a> Tx<'a> {
-    pub fn run(ops: Vec<Box<dyn TxOp<TxState=TxData>>>, data: &'a mut Mutex<&'a mut TxData>)
-               -> Result<&mut Mutex<&mut TxData>, TxError> {
-        {
-            let mut data1 = data.lock().unwrap();
-            let mut tx = Tx::new(ops, data1.borrow_mut());
-            let res = tx.execute();
-            if res.is_err() { return Err(res.err().unwrap()); }
-        }
-        Ok(data)
-    }
-
-    fn new(ops: Vec<Box<dyn TxOp<TxState=TxData>>>, data: &'a mut TxData) -> Self {
-        Tx { ops, completed: 0, data }
-    }
-
-    fn execute(&mut self) -> TxResult {
-        for op in &mut self.ops {
-            op.execute(self.data)?;
-            self.completed += 1;
-        }
-        Ok(())
-    }
-}
-
-impl<'a> Debug for Tx<'a> {
-    fn fmt(&self, f: &mut Formatter) -> Result<(), std::fmt::Error> {
-        write!(f, "Tx {{ completed: {} }}", self.completed)
-    }
-}
-
-impl<'a> Drop for Tx<'a> {
-    fn drop(&mut self) {
-        if self.completed != self.ops.len() {
-            for op in &mut self.ops[..self.completed].iter().rev() {
-                op.revert(&mut self.data);
-            }
-        }
-    }
-}
-
-
 fn atomic_run(ops: &Vec<Box<dyn TxOp<TxState=TxData>>>, data: &mut Arc<Mutex<TxData>>)
               -> Result<usize, TxError> {
     let mut completed = 0;
@@ -160,60 +112,18 @@ fn tx_fees(val: u32) -> u32 {
     }
 }
 
-fn tx_transfer(sender: u32, receiver: u32, transfer: u32) -> TxData {
-    let mut data = TxData { sender, receiver };
-    {
-        let mut wrapped_data = Mutex::new(data.borrow_mut());
-        let _res = Tx::run(vec![
-            Box::new(OpDebitSender::new(tx_fees(transfer))),
-            Box::new(OpDebitSender::new(transfer)),
-            Box::new(OpCreditReceiver::new(transfer)),
-        ], wrapped_data.borrow_mut());
-    }
-    data
-}
-
 fn main() {
-    let data = tx_transfer(10, 20, 8);
-    println!("{:?}", data);
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn tx_transfer_1() {
-        let data = tx_transfer(10, 20, 8);
-        assert_eq!(data.sender, 0);
-        assert_eq!(data.receiver, 28);
-    }
-
-    #[test]
-    fn tx_transfer_2() {
-        let data = tx_transfer(120, 0, 35);
-        assert_eq!(data.sender, 80);
-        assert_eq!(data.receiver, 35);
-    }
-
-    #[test]
-    fn tx_transfer_3() {
-        let data = tx_transfer(912387, 31, 29387);
-        assert_eq!(data.sender, 882413);
-        assert_eq!(data.receiver, 29418);
-    }
-
-    #[test]
-    fn tx_transfer_4() {
-        let data = tx_transfer(0, 100, 0);
-        assert_eq!(data.sender, 0);
-        assert_eq!(data.receiver, 100);
-    }
-
-    #[test]
-    fn tx_transfer_5() {
-        let data = tx_transfer(80, 100, 80);
-        assert_eq!(data.sender, 80);
-        assert_eq!(data.receiver, 100);
+    let data = Arc::new(Mutex::new(TxData { sender: 200, receiver: 305 }));
+    for i in 0..4 {
+        let mut data = Arc::clone(&data);
+        let _res = thread::spawn(move || {
+            let transfer = 10 * i;
+            let _res = atomic_run(&vec![
+                Box::new(OpDebitSender::new(tx_fees(transfer))),
+                Box::new(OpDebitSender::new(transfer)),
+                Box::new(OpCreditReceiver::new(transfer)),
+            ], &mut data);
+            println!("{:?}", data);
+        }).join();
     }
 }
