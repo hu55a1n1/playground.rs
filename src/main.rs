@@ -1,37 +1,66 @@
-use std::error::Error;
-use std::fmt::{Display, Formatter};
-use std::sync::{Arc, Mutex};
+use std::sync;
 use std::thread;
 
-type TxResult = Result<(), TxError>;
+mod atomic_tx {
+    use std::error;
+    use std::fmt;
+    use std::sync;
 
-#[derive(Debug)]
-struct TxError {
-    description: &'static str
-}
+    pub(crate) type TxResult = Result<(), TxError>;
 
-impl TxError {
-    pub fn new(description: &'static str) -> Self {
-        TxError { description }
+    #[derive(Debug)]
+    pub(crate) struct TxError {
+        description: &'static str
     }
-}
 
-impl Error for TxError {
-    fn description(&self) -> &str {
-        self.description
+    impl TxError {
+        pub fn new(description: &'static str) -> Self {
+            TxError { description }
+        }
     }
-}
 
-impl Display for TxError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
-        write!(f, "{}", self.description)
+    impl error::Error for TxError {
+        fn description(&self) -> &str {
+            self.description
+        }
     }
-}
 
-trait TxOp {
-    type TxState;
-    fn execute(&self, state: &mut Self::TxState) -> TxResult;
-    fn revert(&self, state: &mut Self::TxState);
+    impl fmt::Display for TxError {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
+            write!(f, "{}", self.description)
+        }
+    }
+
+    pub(crate) trait TxOp {
+        type TxState;
+        fn execute(&self, state: &mut Self::TxState) -> TxResult;
+        fn revert(&self, state: &mut Self::TxState);
+    }
+
+    pub(crate) fn run<T>(ops: &[Box<dyn TxOp<TxState=T>>], data: &mut sync::Arc<sync::Mutex<T>>)
+                         -> Result<(), (usize, TxError)> {
+        let mut completed = 0;
+        let mut err: Option<TxError> = None;
+        let mut data = data.lock().unwrap();
+
+        for op in ops {
+            match op.execute(&mut *data) {
+                Err(e) => {
+                    err = Some(e);
+                    break;
+                }
+                _ => completed += 1
+            }
+        }
+
+        if err.is_some() {
+            for op in ops[..completed].iter().rev() {
+                op.revert(&mut data);
+            }
+            return Err((completed, err.unwrap()));
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug)]
@@ -50,11 +79,11 @@ impl OpDebitSender {
     }
 }
 
-impl TxOp for OpDebitSender {
+impl atomic_tx::TxOp for OpDebitSender {
     type TxState = TxData;
 
-    fn execute(&self, state: &mut Self::TxState) -> TxResult {
-        if state.sender < self.amount { return Err(TxError::new("Insufficient funds")); }
+    fn execute(&self, state: &mut Self::TxState) -> atomic_tx::TxResult {
+        if state.sender < self.amount { return Err(atomic_tx::TxError::new("Insufficient funds")); }
         state.sender = state.sender - self.amount;
         Ok(())
     }
@@ -74,10 +103,10 @@ impl OpCreditReceiver {
     }
 }
 
-impl TxOp for OpCreditReceiver {
+impl atomic_tx::TxOp for OpCreditReceiver {
     type TxState = TxData;
 
-    fn execute(&self, state: &mut Self::TxState) -> TxResult {
+    fn execute(&self, state: &mut Self::TxState) -> atomic_tx::TxResult {
         state.receiver = state.receiver + self.amount;
         Ok(())
     }
@@ -85,29 +114,6 @@ impl TxOp for OpCreditReceiver {
     fn revert(&self, state: &mut Self::TxState) {
         state.receiver = state.receiver - self.amount;
     }
-}
-
-fn atomic_run(ops: &Vec<Box<dyn TxOp<TxState=TxData>>>, data: &mut Arc<Mutex<TxData>>)
-              -> Result<(), (usize, TxError)> {
-    let mut completed = 0;
-    let mut data = data.lock().unwrap();
-    let mut err: Option<TxError> = None;
-    for op in ops {
-        match op.execute(&mut *data) {
-            Err(e) => {
-                err = Some(e);
-                break;
-            }
-            _ => completed += 1
-        }
-    }
-    if err.is_some() {
-        for op in ops[..completed].iter().rev() {
-            op.revert(&mut data);
-        }
-        return Err((completed, err.unwrap()));
-    }
-    Ok(())
 }
 
 fn tx_fees(val: u32) -> u32 {
@@ -120,18 +126,18 @@ fn tx_fees(val: u32) -> u32 {
 }
 
 fn main() {
-    let data = Arc::new(Mutex::new(TxData { sender: 200, receiver: 305 }));
+    let data = sync::Arc::new(sync::Mutex::new(TxData { sender: 200, receiver: 305 }));
     for i in 0..4 {
-        let mut data = Arc::clone(&data);
+        let mut data = sync::Arc::clone(&data);
         let _res = thread::spawn(move || {
             let transfer = 10 * i;
-            let ops: Vec<Box<dyn TxOp<TxState=TxData>>> = vec![
+            let ops: Vec<Box<dyn atomic_tx::TxOp<TxState=TxData>>> = vec![
                 Box::new(OpDebitSender::new(tx_fees(transfer))),
                 Box::new(OpDebitSender::new(transfer)),
                 Box::new(OpCreditReceiver::new(transfer)),
             ];
-            let res = atomic_run(&ops, &mut data);
-            println!("{:?}", res);
+            let _res = atomic_tx::run(&ops, &mut data);
+//            println!("{:?}", res);
         }).join();
     }
     println!("{:?}", data);
