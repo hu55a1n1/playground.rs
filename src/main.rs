@@ -1,6 +1,7 @@
 use std::borrow::BorrowMut;
 use std::error::Error;
 use std::fmt::{Debug, Display, Formatter};
+use std::sync::Mutex;
 
 type TxResult = Result<(), TxError>;
 
@@ -93,10 +94,11 @@ struct Tx<'a> {
 }
 
 impl<'a> Tx<'a> {
-    pub fn run(ops: Vec<Box<dyn TxOp<TxState=TxData>>>, data: &'a mut TxData)
-               -> Result<&mut TxData, TxError> {
+    pub fn run(ops: Vec<Box<dyn TxOp<TxState=TxData>>>, data: &'a mut Mutex<&'a mut TxData>)
+               -> Result<&mut Mutex<&mut TxData>, TxError> {
         {
-            let mut tx = Tx::new(ops, data);
+            let mut data1 = data.lock().unwrap();
+            let mut tx = Tx::new(ops, data1.borrow_mut());
             let res = tx.execute();
             if res.is_err() { return Err(res.err().unwrap()); }
         }
@@ -143,11 +145,14 @@ fn tx_fees(val: u32) -> u32 {
 
 fn tx_transfer(sender: u32, receiver: u32, transfer: u32) -> TxData {
     let mut data = TxData { sender, receiver };
-    let _res = Tx::run(vec![
-        Box::new(OpDebitSender::new(tx_fees(transfer))),
-        Box::new(OpDebitSender::new(transfer)),
-        Box::new(OpCreditReceiver::new(transfer)),
-    ], data.borrow_mut());
+    {
+        let mut wrapped_data = Mutex::new(data.borrow_mut());
+        let _res = Tx::run(vec![
+            Box::new(OpDebitSender::new(tx_fees(transfer))),
+            Box::new(OpDebitSender::new(transfer)),
+            Box::new(OpCreditReceiver::new(transfer)),
+        ], wrapped_data.borrow_mut());
+    }
     data
 }
 
