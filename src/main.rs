@@ -126,7 +126,9 @@ fn tx_fees(val: u32) -> u32 {
 }
 
 fn main() {
-    let data = sync::Arc::new(sync::Mutex::new(TxData { sender: 200, receiver: 305 }));
+    let data = sync::Arc::new(sync::Mutex::new(
+        TxData { sender: 200, receiver: 305 }
+    ));
     for i in 0..4 {
         let mut data = sync::Arc::clone(&data);
         let _res = thread::spawn(move || {
