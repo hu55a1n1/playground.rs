@@ -88,19 +88,26 @@ impl TxOp for OpCreditReceiver {
 }
 
 fn atomic_run(ops: &Vec<Box<dyn TxOp<TxState=TxData>>>, data: &mut Arc<Mutex<TxData>>)
-              -> Result<usize, TxError> {
+              -> Result<(), (usize, TxError)> {
     let mut completed = 0;
     let mut data = data.lock().unwrap();
+    let mut err: Option<TxError> = None;
     for op in ops {
-        op.execute(&mut *data)?;
-        completed += 1;
+        match op.execute(&mut *data) {
+            Err(e) => {
+                err = Some(e);
+                break;
+            }
+            _ => completed += 1
+        }
     }
-    if completed != ops.len() {
+    if err.is_some() {
         for op in ops[..completed].iter().rev() {
             op.revert(&mut data);
         }
+        return Err((completed, err.unwrap()));
     }
-    Ok(completed)
+    Ok(())
 }
 
 fn tx_fees(val: u32) -> u32 {
@@ -123,8 +130,9 @@ fn main() {
                 Box::new(OpDebitSender::new(transfer)),
                 Box::new(OpCreditReceiver::new(transfer)),
             ];
-            let _res = atomic_run(&ops, &mut data);
-            println!("{:?}", data);
+            let res = atomic_run(&ops, &mut data);
+            println!("{:?}", res);
         }).join();
     }
+    println!("{:?}", data);
 }
