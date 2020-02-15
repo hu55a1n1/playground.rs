@@ -1,7 +1,7 @@
 use std::borrow::BorrowMut;
 use std::error::Error;
 use std::fmt::{Debug, Display, Formatter};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 type TxResult = Result<(), TxError>;
 
@@ -30,7 +30,7 @@ impl Display for TxError {
 
 trait TxOp {
     type TxState;
-    fn execute(&mut self, state: &mut Self::TxState) -> TxResult;
+    fn execute(&self, state: &mut Self::TxState) -> TxResult;
     fn revert(&self, state: &mut Self::TxState);
 }
 
@@ -53,7 +53,7 @@ impl OpDebitSender {
 impl TxOp for OpDebitSender {
     type TxState = TxData;
 
-    fn execute(&mut self, state: &mut Self::TxState) -> TxResult {
+    fn execute(&self, state: &mut Self::TxState) -> TxResult {
         if state.sender < self.amount { return Err(TxError::new("Insufficient funds")); }
         state.sender = state.sender - self.amount;
         Ok(())
@@ -77,7 +77,7 @@ impl OpCreditReceiver {
 impl TxOp for OpCreditReceiver {
     type TxState = TxData;
 
-    fn execute(&mut self, state: &mut Self::TxState) -> TxResult {
+    fn execute(&self, state: &mut Self::TxState) -> TxResult {
         state.receiver = state.receiver + self.amount;
         Ok(())
     }
@@ -132,6 +132,23 @@ impl<'a> Drop for Tx<'a> {
             }
         }
     }
+}
+
+
+fn atomic_run(ops: &Vec<Box<dyn TxOp<TxState=TxData>>>, data: &mut Arc<Mutex<TxData>>)
+              -> Result<usize, TxError> {
+    let mut completed = 0;
+    let mut data = data.lock().unwrap();
+    for op in ops {
+        op.execute(&mut *data)?;
+        completed += 1;
+    }
+    if completed != ops.len() {
+        for op in ops[..completed].iter().rev() {
+            op.revert(&mut data);
+        }
+    }
+    Ok(completed)
 }
 
 fn tx_fees(val: u32) -> u32 {
