@@ -1,0 +1,1 @@
+add_executable(atomic_tx src/atomic_tx.c)
