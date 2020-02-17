@@ -1,6 +1,9 @@
 use std::sync;
 use std::thread;
 
+///
+/// Boiler-plate code written once
+///
 mod atomic_tx {
     use std::error;
     use std::fmt;
@@ -8,6 +11,7 @@ mod atomic_tx {
 
     pub(crate) type TxResult = Result<(), TxError>;
 
+    /// Error type
     #[derive(Debug)]
     pub(crate) struct TxError {
         description: &'static str
@@ -31,18 +35,35 @@ mod atomic_tx {
         }
     }
 
+    /// Operation interface
+    /// Note: Rust supports `static polymorphism`!
     pub(crate) trait TxOp {
+        // associated type
         type TxState;
+
+        // applies this operation onto given state
         fn apply(&self, state: &mut Self::TxState) -> TxResult;
+
+        // rollback this operation
+        // *Must NOT fail*
         fn rollback(&self, state: &mut Self::TxState);
     }
 
+    /// a function that applies the operations (specified by the ops array slice) one-by-one onto
+    /// the shared state.
+    /// Provides -
+    /// 1. Reentrancy and atomicity
+    /// 2. Strong exception guarantee - Either all ops are applied or none are applied and the
+    /// shared state is exactly as before.
     pub(crate) fn run<T>(ops: &[Box<dyn TxOp<TxState=T>>], data: &mut sync::Arc<sync::Mutex<T>>)
                          -> Result<(), (usize, TxError)> {
         let mut completed = 0;
         let mut err: Option<TxError> = None;
+
+        // `RAII` lock guard - guaranteed to unlock() when out-of-scope
         let mut data = data.lock().unwrap();
 
+        // apply ops one-by-one, set err & break on failure
         for op in ops {
             match op.apply(&mut *data) {
                 Err(e) => {
@@ -53,6 +74,7 @@ mod atomic_tx {
             }
         }
 
+        // if err is set, rollback applied ops in reverse order
         if err.is_some() {
             for op in ops[..completed].iter().rev() {
                 op.rollback(&mut data);
@@ -63,12 +85,21 @@ mod atomic_tx {
     }
 }
 
+///
+/// Implementation code
+///
+
+/// Shared state
+/// Maybe a database connection handle, ORM stuff, etc.
+/// Here, we have two uints representative of sender & receiver account balances
 #[derive(Debug)]
 struct TxData {
     sender: u32,
     receiver: u32,
 }
 
+/// Debit sender operation
+/// debits the sender account by specified amount
 struct OpDebitSender {
     amount: u32
 }
@@ -93,6 +124,8 @@ impl atomic_tx::TxOp for OpDebitSender {
     }
 }
 
+/// Credit receiver operation
+/// credits the receiver account with specified amount
 struct OpCreditReceiver {
     amount: u32
 }
@@ -116,6 +149,7 @@ impl atomic_tx::TxOp for OpCreditReceiver {
     }
 }
 
+/// Tx fee calculation
 fn tx_fees(val: u32) -> u32 {
     match val {
         0...10 => 2,
@@ -125,10 +159,16 @@ fn tx_fees(val: u32) -> u32 {
     }
 }
 
+///
+/// Main
+///
 fn main() {
+    // shared state
     let data = sync::Arc::new(sync::Mutex::new(
         TxData { sender: 200, receiver: 305 }
     ));
+
+    // usage example
     for i in 0..4 {
         let mut data = sync::Arc::clone(&data);
         let _res = thread::spawn(move || {
@@ -139,7 +179,6 @@ fn main() {
                 Box::new(OpCreditReceiver::new(transfer)),
             ];
             let _res = atomic_tx::run(&ops, &mut data);
-//            println!("{:?}", res);
         }).join();
     }
     println!("{:?}", data);
