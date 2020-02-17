@@ -36,7 +36,7 @@ mod atomic_tx {
     }
 
     /// Operation interface
-    /// Note: Rust supports `static polymorphism`!
+    /// Note: Rust supports `static polymorphism` (i.e. no dynamic dispatch)!
     pub(crate) trait TxOp {
         // associated type
         type TxState;

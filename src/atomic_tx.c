@@ -2,16 +2,21 @@
 #include <stdint.h>
 #include <stdio.h>
 
+// Shared state
+// Maybe a database connection handle, ORM stuff, etc.
+// Here, we have two uints representative of sender & receiver account balances
 typedef struct {
   uint32_t sender;
   uint32_t receiver;
 } tx_data;
 
+// monitor struct - associate shared data with mutex
 typedef struct {
   tx_data data;
   pthread_mutex_t mutex;
 } tx_state;
 
+// simple tx fees calculator
 uint32_t tx_fees(uint32_t amount) {
   if (amount <= 10)
     return 2;
@@ -23,6 +28,8 @@ uint32_t tx_fees(uint32_t amount) {
     return amount / 50;
 }
 
+// impl 1 - reentrant transfer with strong exception guarantee
+// using goto
 int atomic_transfer_1(tx_state *state, uint32_t amount) {
   int ret = 0;
   uint32_t fees = tx_fees(amount);
@@ -52,6 +59,8 @@ EXIT:
   return ret;
 }
 
+// impl 2 - reentrant transfer with strong exception guarantee
+// using nested if-else
 int atomic_transfer_2(tx_state *state, uint32_t amount) {
   int ret = 0;
   uint32_t fees = tx_fees(amount);
@@ -83,10 +92,11 @@ int main() {
   printf("Returned: %d\n", ret);
   printf("{sender: %u, receiver: %u}\n", state.data.sender,
          state.data.receiver);
-  
+
   atomic_transfer_2(&state, 8);
   printf("Returned: %d\n", ret);
   printf("{sender: %u, receiver: %u}\n", state.data.sender,
          state.data.receiver);
+
   return 0;
 }
